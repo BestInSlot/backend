@@ -3,33 +3,15 @@ const fp = require("fastify-plugin");
 
 function setupMail(fastify, opts, next) {
   if (!fastify.mail) {
-    const _opts = {};
+    const required = ["apiKey", "domain"];
 
-    const properties = [
-      "apiKey",
-      "publicApiKey",
-      "domain",
-      "mute",
-      "proxy",
-      "timeout",
-      "host",
-      "protocol",
-      "port",
-      "endpoint",
-      "retry"
-    ];
-
-    properties.forEach(prop => {
-      if (typeof opts[prop] !== undefined) {
-        _opts[prop] = opts[prop];
+    required.forEach(prop => {
+      if (typeof opts[prop] === undefined) {
+        next(new Error(`missing required properties: '${opts[prop]}'`));
       }
     });
 
-    fastify.decorate("mail", () => {
-      return require("mailgun-js")({
-        ..._opts
-      });
-    });
+    fastify.decorate("mail", require("mailgun-js")(opts));
   }
   next();
 }
