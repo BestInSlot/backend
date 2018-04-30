@@ -1,4 +1,4 @@
-const Model = require('../../Base');
+const Model = require('../../../Base');
 const bcrypt = require('bcryptjs');
 const SALT_ROUNDS = 10;
 

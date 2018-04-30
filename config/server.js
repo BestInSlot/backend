@@ -6,7 +6,7 @@ const app = require("fastify")({
   logger: process.env.NODE_ENV === "development" ? true : false
 });
 
-const dbConf = require("./knexfile")[process.env.NODE_ENV];
+const dbConf = require("./knexfile");
 
 /*** SETUP SOME SECURITY MIDDLEWARE */
 app.use(require('cors')());
@@ -19,7 +19,12 @@ app.use(require('hide-powered-by')({
 app.use(require('x-xss-protection')());
 
 /*** SETUP MORE MIDDLEWARE AND DEPENDENCIES ***/
-app.register(require("./db"), dbConf);
+app.register(require("./db"), dbConf({
+  client: process.env.DB_CLIENT,
+  database: process.env.DB_NAME,
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER
+}));
 app.register(require("fastify-compress"), {
   global: false
 });
@@ -52,15 +57,16 @@ const {
 Model.knex(app.knex);
 
 //register routes
-app.register(require("../users/v1/routes.js"), {
+app.register(require("../api/users/v1/routes.js"), {
   prefix: "/v1/users"
 });
 
-app.listen(3000, function (err) {
+app.listen(process.env.PORT || 3000, function (err) {
   if (err) {
     app.log.error(err);
+    process.exit(1);
   }
-  console.log("server is up and running on port 3000....");
+  console.log(`server is up and running on port ${process.env.PORT5}.....`);
 });
 
 module.exports = app;
