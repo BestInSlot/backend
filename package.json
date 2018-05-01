@@ -2,10 +2,10 @@
   "name": "bis-backend",
   "version": "0.1.0",
   "description": "The backend for the best in slot site",
-  "main": "./config/server.js",
+  "main": "./app.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "NODE_ENV=development nodemon ./config/server"
+    "start": "NODE_ENV=development nodemon ./app"
   },
   "author": "",
   "license": "ISC",

@@ -2,16 +2,15 @@
 const Boom = require("boom");
 const User = require("./UserModel");
 const crypto = require("crypto");
+const pick = require("lodash/pick");
 const { promisify } = require("util");
 
 class UserController {
-  constructor(app) {
-    this.app = app;
-  }
+
+  constructor() {}
 
   async register(req, reply) {
     const { credentials } = req.body;
-    const { app } = this;
     const randomString = crypto.randomBytes(20).toString("hex");
     const key = `${credentials.username}:verify`;
     let user;
@@ -28,10 +27,10 @@ class UserController {
       return Boom.badRequest("Invalid credentials");
     }
 
-    const verification = app.redis.set(key, randomString, "EX", 600);
+    const verification = this.redis.set(key, randomString, "EX", 600);
 
     try {
-      await app.mail.messsages().send({
+      await this.mail.messsages().send({
         from: "noreply@bestinslot.org",
         to: `${user.email}`,
         subject: "Please verify your account",
@@ -53,8 +52,8 @@ class UserController {
 
   async verify(req, reply) {
     const { key, username } = req.body;
-    const { app } = this;
-    const asyncGet = promisify(app.redis.get).bind(app.redis);
+    // const { app } = this;
+    const asyncGet = promisify(this.redis.get).bind(this.redis);
     const verificationKey = `${username}:verify`;
     const verified = await asyncGet(verificationKey);
 
@@ -80,7 +79,11 @@ class UserController {
 
   async login(req, reply) {
     const { email, password } = req.body.credentials;
-    const asyncJwtSign = promisify(app.jwt.sign);
+    const asyncJwtSign = promisify(this.jwt.sign);
+    const lockOutTime = Date.now() + 3600000 * 2;
+    const resetLoginAttempts = User.query()
+      .patch({ loginAttempts: 5 })
+      .where({ email, approved: true });
 
     if (email && password) {
       const user = await User.query()
@@ -92,11 +95,26 @@ class UserController {
         return Boom.notFound("User credentials incorrect or doesn't exist.");
       }
 
-      if (await user.verifyPassword(password)) {
-        return Boom.badData("User credentials incorrect or doesn't exist");
+      if (user && !user.loginAttempts) {
+        if (lockOutTime > Date.now()) {
+          return Boom.badData(
+            "Too many failed login attempts; your account has been locked for 3 hours. To regain access immediately, reset your password."
+          );
+        }
       }
 
-      delete user.password;
+      if (await user.verifyPassword(password)) {
+        if (user.loginAttempts > 0) {
+          await User.query()
+            .patch({ loginAttempts: user.loginAttempts-- })
+            .where({ email, approved: true });
+        }
+        return Boom.badData("User credentials incorrect or doesn't exist");
+      } else {
+        await resetLoginAttempts;
+      }
+
+      pick(user, ["id", "username", "avatar", "created_at"]);
 
       const token = await asyncJwtSign(
         {

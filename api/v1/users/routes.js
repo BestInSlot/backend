@@ -7,7 +7,7 @@ const userSchema = require("./schemas/userSchema");
 const loginSchema = require("./schemas/loginSchema");
 
 module.exports = function(app, opts, next) {
-  const userController = new UserController(app);
+  const userController = new UserController();
   app.route({
     method: "POST",
     url: "/",
@@ -36,7 +36,7 @@ module.exports = function(app, opts, next) {
   app.route({
     method: "GET",
     url: "/test",
-    beforeHandler: app.auth,
+    // beforeHandler: app.auth,
     handler: userController.test
   });
 
