@@ -66,10 +66,10 @@ app.register(require("./utils/discourse"), {
 });
 
 /*** SETUP DB CONNECTION ***/
-const { Model } = require("objection");
+
 const setupObjection = require('./utils/setupObjection');
 
-setupObjection(app, Model);
+setupObjection(app);
 // app
 //   .ready()
 //   .then(function() {
