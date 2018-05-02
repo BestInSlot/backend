@@ -5,6 +5,7 @@ const guard = require("express-jwt-permissions");
 const pick = require("lodash/pick");
 
 module.exports = fp(function(fastify, opts, next) {
+
   try {
     const properties = [
       "secret",

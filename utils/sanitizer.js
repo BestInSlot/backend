@@ -24,9 +24,9 @@ module.exports = function(opts = {}) {
             _clean(req[0])
         }
 
-    } else if (typeof req === 'string') {
-        req = sanitize(req, _opts);
-    }
+    } 
+    
+    req = sanitize(req, _opts);
 
     return req;
   }

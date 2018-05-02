@@ -147,7 +147,6 @@ class UserController {
   // }
 
   async test(req, reply) {
-    console.log(this.knex);    
     return { message: "THis is a test" };
   }
 }
