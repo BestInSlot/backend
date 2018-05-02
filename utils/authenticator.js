@@ -2,10 +2,8 @@ const fp = require("fastify-plugin");
 const expressJwt = require("express-jwt");
 const UnauthorizedError = require("../node_modules/express-jwt/lib/errors/UnauthorizedError.js");
 const guard = require("express-jwt-permissions");
-const pick = require("lodash/pick");
 
 module.exports = fp(function(fastify, opts, next) {
-
   try {
     const properties = [
       "secret",
@@ -18,9 +16,18 @@ module.exports = fp(function(fastify, opts, next) {
       "isRevoked"
     ];
 
-    pick(opts, properties);
+    const _opts = ({
+      secret,
+      audience,
+      issuer,
+      requestProperty,
+      resultProperty,
+      credentialsRequired,
+      getToken,
+      isRevoked
+    } = opts);
 
-    fastify.decorate("auth", expressJwt(opts));
+    fastify.decorate("auth", expressJwt(_opts));
     fastify.setErrorHandler(function(err, req, reply) {
       if (err && err instanceof UnauthorizedError) {
         if (err.message === "token_expired") {

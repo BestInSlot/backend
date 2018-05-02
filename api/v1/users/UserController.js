@@ -2,18 +2,16 @@
 const Boom = require("boom");
 const User = require("./UserModel");
 const crypto = require("crypto");
-const pick = require("lodash/pick");
 const { promisify } = require("util");
 
 class UserController {
-
   constructor() {}
 
   async register(req, reply) {
     const { credentials } = req.body;
     const randomString = crypto.randomBytes(20).toString("hex");
     const key = `${credentials.username}:verify`;
-    let user;
+    let user, verification;
     try {
       user = await User.query()
         .insert(credentials)
@@ -26,21 +24,43 @@ class UserController {
       return Boom.badRequest("Invalid credentials");
     }
 
-    const verification = this.redis.set(key, randomString, "EX", 600);
-
     try {
-      await this.mail.messsages().send({
-        from: "noreply@bestinslot.org",
-        to: `${user.email}`,
-        subject: "Please verify your account",
-        text: `Please copy and paste the following into your browser: http://localhost:8080/verify/?username=${
-          user.username
-        }&key=${verification}`
-      });
+      verification = this.redis.set(key, randomString, "EX", 600);
     } catch (e) {
       console.log(e);
-      return Boom.badImplementation("Internal Server Error");
+      return Boom.internal(e.message);
     }
+
+    // try {
+    //   await this.mail.messsages().send({
+    //     from: "noreply@bestinslot.org",
+    //     to: `${user.email}`,
+    //     subject: "Please verify your account",
+    //     text: `Please copy and paste the following into your browser: http://localhost:8080/verify/?username=${
+    //       user.username
+    //     }&key=${verification}`
+    //   });
+    // } catch (e) {
+    //   console.log(e);
+    //   return Boom.badImplementation("Internal Server Error");
+    // }
+
+    const data = {
+      from: "noreply@bestinslot.org",
+      to: `${user.email}`,
+      subject: "Please verify your account",
+      text: `Please copy and paste the following into your browser: http://localhost:8080/verify/?username=${
+        user.username
+      }&key=${verification}`
+    };
+
+    this.mail.messages().send(data, function(err, body) {
+      if (err) {
+        console.log(err);
+        return Boom.internal(err);
+      }
+      console.log(body);
+    });
 
     return {
       message: `Thank you for registering, we've dispatched an email to ${
@@ -59,8 +79,12 @@ class UserController {
     if (verified) {
       if (verified === key) {
         const user = await User.query()
-          .patch({ approved: true })
-          .where({ username })
+          .patch({
+            approved: true
+          })
+          .where({
+            username
+          })
           .returning("approved");
 
         if (user.approved) {
@@ -81,13 +105,21 @@ class UserController {
     const asyncJwtSign = promisify(this.jwt.sign);
     const lockOutTime = Date.now() + 3600000 * 2;
     const resetLoginAttempts = User.query()
-      .patch({ loginAttempts: 5 })
-      .where({ email, approved: true });
+      .patch({
+        loginAttempts: 5
+      })
+      .where({
+        email,
+        approved: true
+      });
 
     if (email && password) {
       const user = await User.query()
         .eager("groups")
-        .where({ email, approved: true })
+        .where({
+          email,
+          approved: true
+        })
         .throwIfNotFound();
 
       if (!user) {
@@ -105,21 +137,26 @@ class UserController {
       if (await user.verifyPassword(password)) {
         if (user.loginAttempts > 0) {
           await User.query()
-            .patch({ loginAttempts: user.loginAttempts-- })
-            .where({ email, approved: true });
+            .patch({
+              loginAttempts: user.loginAttempts--
+            })
+            .where({
+              email,
+              approved: true
+            });
         }
         return Boom.badData("User credentials incorrect or doesn't exist");
       } else {
         await resetLoginAttempts;
       }
 
-      pick(user, ["id", "username", "avatar", "created_at"]);
+      const userFields = ({ id, username, avatar, created_at } = user);
 
       const token = await asyncJwtSign(
         {
           iss: "bestinslot.org",
           exp: Math.floor(Date.now() / 1000 + 60 * 60),
-          sub: user
+          sub: userFields
         },
         process.env.SECRET
       );
@@ -139,7 +176,9 @@ class UserController {
       );
     }
 
-    return { user: req.auth };
+    return {
+      user: req.auth
+    };
   }
 
   // async index(req, reply) {
@@ -147,7 +186,9 @@ class UserController {
   // }
 
   async test(req, reply) {
-    return { message: "THis is a test" };
+    return {
+      message: "THis is a test"
+    };
   }
 }
 

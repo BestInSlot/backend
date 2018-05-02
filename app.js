@@ -22,6 +22,7 @@ app.use(
 app.use(require("x-xss-protection")());
 
 /*** SETUP PLUGIN MIDDLEWARE AND DEPENDENCIES ***/
+app.register(require("fastify-boom"));
 app.register(
   require("./config/db"),
   dbConf({
@@ -31,11 +32,11 @@ app.register(
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     migrations: {
-      directory: './config/db/migrations',
-      tableName: 'knex_migrations'
+      directory: "./config/db/migrations",
+      tableName: "knex_migrations"
     },
     seeds: {
-      directory: './config/db/seeds'
+      directory: "./config/db/seeds"
     }
   })
 );
@@ -66,13 +67,18 @@ app.register(require("./utils/discourse"), {
 
 /*** SETUP DB CONNECTION ***/
 const { Model } = require("objection");
-app.ready().then(function() {
-  Model.knex(app.knex);
-})
-.catch(err => {
-  app.log.error(err);
-  process.exit(1);
-})
+const setupObjection = require('./utils/setupObjection');
+
+setupObjection(app, Model);
+// app
+//   .ready()
+//   .then(function() {
+//     Model.knex(app.knex);
+//   })
+//   .catch(err => {
+//     app.log.error(err);
+//     process.exit(1);
+//   });
 
 /*** SETUP ROUTES ***/
 app.register(require("./api/v1/users/routes.js"), {
@@ -85,7 +91,9 @@ app.listen(process.env.PORT || 3000, function(err) {
     app.log.error(err);
     process.exit(1);
   }
-  console.log(`server is up and running on port ${app.server.address().port}.....`);
+  console.log(
+    `server is up and running on port ${app.server.address().port}.....`
+  );
 });
 
 module.exports = app;
