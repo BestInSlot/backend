@@ -25,25 +25,12 @@ class UserController {
     }
 
     try {
-      verification = this.redis.set(key, randomString, "EX", 600);
+      verification = await this.redis.set(key, randomString, "EX", 600);
+      console.log(verification);
     } catch (e) {
       console.log(e);
       return Boom.internal(e.message);
     }
-
-    // try {
-    //   await this.mail.messsages().send({
-    //     from: "noreply@bestinslot.org",
-    //     to: `${user.email}`,
-    //     subject: "Please verify your account",
-    //     text: `Please copy and paste the following into your browser: http://localhost:8080/verify/?username=${
-    //       user.username
-    //     }&key=${verification}`
-    //   });
-    // } catch (e) {
-    //   console.log(e);
-    //   return Boom.badImplementation("Internal Server Error");
-    // }
 
     const data = {
       from: "noreply@bestinslot.org",
@@ -51,16 +38,24 @@ class UserController {
       subject: "Please verify your account",
       text: `Please copy and paste the following into your browser: http://localhost:8080/verify/?username=${
         user.username
-      }&key=${verification}`
+      }&key=${randomString}`
     };
 
-    this.mail.messages().send(data, function(err, body) {
+    // this.mail.messages().send(data, function(err, body) {
+    //   if (err) {
+    //     console.log(err);
+    //     return Boom.internal(err);
+    //   }
+    //   console.log(body);
+    // });
+
+    this.nodemailer.mail(data, function(err, info, message) {
       if (err) {
-        console.log(err);
-        return Boom.internal(err);
+        return Boom.internal("Problem sending email.");
       }
-      console.log(body);
-    });
+      console.log("Message sent: %s", info.messageId);
+      console.log('Preview URL: %s', message);
+    })
 
     return {
       message: `Thank you for registering, we've dispatched an email to ${

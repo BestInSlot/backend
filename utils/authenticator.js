@@ -5,17 +5,6 @@ const guard = require("express-jwt-permissions");
 
 module.exports = fp(function(fastify, opts, next) {
   try {
-    const properties = [
-      "secret",
-      "audience",
-      "issuer",
-      "requestProperty",
-      "resultProperty",
-      "credentialsRequired",
-      "getToken",
-      "isRevoked"
-    ];
-
     const _opts = ({
       secret,
       audience,
@@ -27,18 +16,19 @@ module.exports = fp(function(fastify, opts, next) {
       isRevoked
     } = opts);
 
-    fastify.decorate("auth", expressJwt(_opts));
-    fastify.setErrorHandler(function(err, req, reply) {
-      if (err && err instanceof UnauthorizedError) {
-        if (err.message === "token_expired") {
-          return reply.code(401).send({ token_expired: true });
-        } else {
-          return { message: "invalid_token..." };
+    fastify
+      .decorate("auth", expressJwt(_opts))
+      .setErrorHandler(function(err, req, reply) {
+        if (err && err instanceof UnauthorizedError) {
+          if (err.message === "token_expired") {
+            return reply.code(401).send({ token_expired: true });
+          } else {
+            return { message: "invalid_token..." };
+          }
         }
-      }
-    });
+      });
   } catch (err) {
-    next(err);
+    return next(err);
   }
 
   const hasPermissions =
@@ -49,7 +39,7 @@ module.exports = fp(function(fastify, opts, next) {
     try {
       fastify.decorate("guard", guard(_opts));
     } catch (err) {
-      next(err);
+      return next(err);
     }
   }
 

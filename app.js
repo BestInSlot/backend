@@ -54,10 +54,11 @@ app.register(require("./utils/authenticator"), {
 app.register(require("fastify-redis"), {
   host: "127.0.0.1"
 });
-app.register(require("./utils/mail"), {
-  apiKey: process.env.MAIL_API_KEY,
-  domain: process.env.MAIL_DOMAIN
-});
+// app.register(require("./utils/mail"), {
+//   apiKey: process.env.MAIL_API_KEY,
+//   domain: process.env.MAIL_DOMAIN
+// });
+app.register(require('./utils/dev-mail'));
 app.register(require("./utils/discourse"), {
   host: process.env.DISCOURSE_HOST,
   port: process.env.DISCOURSE_PORT,
@@ -68,17 +69,7 @@ app.register(require("./utils/discourse"), {
 /*** SETUP DB CONNECTION ***/
 
 const setupObjection = require('./utils/setupObjection');
-
 setupObjection(app);
-// app
-//   .ready()
-//   .then(function() {
-//     Model.knex(app.knex);
-//   })
-//   .catch(err => {
-//     app.log.error(err);
-//     process.exit(1);
-//   });
 
 /*** SETUP ROUTES ***/
 app.register(require("./api/v1/users/routes.js"), {

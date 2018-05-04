@@ -39,7 +39,7 @@ module.exports = function(opts = {}) {
       try {
           request = _clean(request);
       } catch (e) {
-          done(e);
+          return done(e);
       }
 
       done();

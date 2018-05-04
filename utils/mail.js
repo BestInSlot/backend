@@ -16,7 +16,7 @@ function setupMail(fastify, opts, next) {
       next();      
     }
     catch (e) {
-      next(e);
+      return next(e);
     }
   }
 }
