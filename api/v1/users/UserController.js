@@ -2,6 +2,7 @@
 const Boom = require("boom");
 const User = require("./UserModel");
 const crypto = require("crypto");
+const verificationEmail = require("../../../utils/emailTemplates/verificationEmail");
 const { addMinutes, addHours, isAfter } = require("date-fns");
 const { promisify } = require("util");
 
@@ -30,8 +31,7 @@ class UserController {
       const val = {
         username: user.username,
         email: user.email,
-        key: generatedKey,
-        grace: addMinutes(Date.now(), 2)
+        key: generatedKey
       };
       verification = redis.set(key, JSON.stringify(val), "EX", 600);
       console.log(verification);
@@ -39,15 +39,6 @@ class UserController {
       console.log(e);
       return Boom.internal(e.message);
     }
-
-    const data = {
-      from: "noreply@bestinslot.org",
-      to: `${user.email}`,
-      subject: "Please verify your account",
-      text: `Please copy and paste the following into your browser: http://localhost:8080/verify/?username=${
-        user.username
-      }&key=${generatedKey}`
-    };
 
     // this.mail.messages().send(data, function(err, body) {
     //   if (err) {
@@ -57,13 +48,23 @@ class UserController {
     //   console.log(body);
     // });
 
-    nodemailer.sendTestMail(data, function(err, info, message) {
-      if (err) {
-        return Boom.internal("Problem sending email.");
+    nodemailer.sendTestMail(
+      verificationEmail(
+        "noreply@bestinslot.org",
+        user.email,
+        "Please verify your account",
+        generatedKey,
+        process.env.CLIENT_URL,
+        user.username
+      ),
+      function(err, info, message) {
+        if (err) {
+          return Boom.internal("Problem sending email.");
+        }
+        console.log("Message sent: %s", info.messageId);
+        console.log("Preview URL: %s", message);
       }
-      console.log("Message sent: %s", info.messageId);
-      console.log("Preview URL: %s", message);
-    });
+    );
 
     return {
       message: `Thank you for registering, we've dispatched an email to ${
@@ -96,6 +97,7 @@ class UserController {
           .returning("approved");
 
         if (user.approved) {
+          redis.del(verificationKey);
           return {
             message: "Thanks! Your account is now verified and active."
           };
@@ -135,7 +137,6 @@ class UserController {
       }
 
       if (user && !user.loginAttempts) {
-        //if lockOutTime is after the Date.now, we have to wait.
         if (isAfter(addHours(user.last_login_attempt, 6), Date.now())) {
           return Boom.badData(
             "Too many failed login attempts; your account has been locked for 3 hours. To regain access immediately, reset your password."
@@ -195,6 +196,7 @@ class UserController {
     const { redis, nodemailer } = this;
     let key = `${req.params.username.toLowerCase()}:verify`,
       verification;
+
     try {
       verification = JSON.parse(await redis.get(key));
     } catch (e) {
@@ -203,7 +205,7 @@ class UserController {
     }
 
     if (verification && verification.grace) {
-      if (verification.grace > Date.now()) {
+      if (isAfter(verification.grace, Date.now())) {
         return Boom.conflict(
           "You must wait 2 minutes before making another verification request."
         );
@@ -233,27 +235,32 @@ class UserController {
       };
 
       redis.set(newKey, JSON.stringify(verification), "EX", 600);
+    } else {
+      verification.grace = addMinutes(Date.now(), 2);
     }
 
-    const data = {
-      from: "noreply@bestinslot.org",
-      to: `${verification.email}`,
-      subject: "Please verify your account",
-      text: `Please copy and paste the following into your browser: http://localhost:8080/verify/?username=${
-        verification.username
-      }&key=${verification.key}`
-    };
-
-    nodemailer.sendTestMail(data, function(err, info, message) {
-      if (err) {
-        console.log(e);
+    nodemailer.sendTestMail(
+      verificationEmail(
+        "noreply@bestinslot.org",
+        verifcation.email,
+        "Please verify your account",
+        verification.key,
+        process.env.CLIENT_URL,
+        verifcation.username
+      ),
+      function(err, info, message) {
+        if (err) {
+          return Boom.internal("Problem sending email.");
+        }
+        console.log("Message sent: %s", info.messageId);
+        console.log("Preview URL: %s", message);
       }
-      console.log(message);
-    });
+    );
 
     return {
-      message:
-        "We've dispatched a new verification email. Please check your inbox."
+      message: `We've dispatched a new verification email to ${
+        verification.email
+      }. Please check your inbox.`
     };
   }
 }
