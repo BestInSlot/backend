@@ -5,6 +5,7 @@ const registerSchema = require("./schemas/registerSchema");
 const authSchema = require("./schemas/authSchema");
 const userSchema = require("./schemas/userSchema");
 const loginSchema = require("./schemas/loginSchema");
+const verifySchema = require('./schemas/verifySchema');
 
 module.exports = function(app, opts, next) {
   const userController = new UserController();
@@ -14,6 +15,13 @@ module.exports = function(app, opts, next) {
     schema: registerSchema,
     handler: userController.register
   });
+
+  app.route({
+    method: 'POST',
+    url: '/verify',
+    schema: verifySchema,
+    handler: userController.verify
+  })
 
   app.route({
     method: "GET",
@@ -31,13 +39,6 @@ module.exports = function(app, opts, next) {
     url: "/login",
     schema: loginSchema,
     handler: userController.login
-  });
-
-  app.route({
-    method: "GET",
-    url: "/test",
-    // beforeHandler: app.auth,
-    handler: userController.test
   });
 
   next();

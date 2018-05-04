@@ -2,6 +2,7 @@
 const Boom = require("boom");
 const User = require("./UserModel");
 const crypto = require("crypto");
+const { addMinutes, addHours, isAfter } = require("date-fns");
 const { promisify } = require("util");
 
 class UserController {
@@ -9,8 +10,9 @@ class UserController {
 
   async register(req, reply) {
     const { credentials } = req.body;
-    const randomString = crypto.randomBytes(20).toString("hex");
-    const key = `${credentials.username}:verify`;
+    const { redis, nodemailer } = this;
+    const generatedKey = crypto.randomBytes(20).toString("hex");
+    const key = `${credentials.username.toLowerCase()}:verify`;
     let user, verification;
     try {
       user = await User.query()
@@ -25,7 +27,13 @@ class UserController {
     }
 
     try {
-      verification = await this.redis.set(key, randomString, "EX", 600);
+      const val = {
+        username: user.username,
+        email: user.email,
+        key: generatedKey,
+        grace: addMinutes(Date.now(), 2)
+      };
+      verification = redis.set(key, JSON.stringify(val), "EX", 600);
       console.log(verification);
     } catch (e) {
       console.log(e);
@@ -38,7 +46,7 @@ class UserController {
       subject: "Please verify your account",
       text: `Please copy and paste the following into your browser: http://localhost:8080/verify/?username=${
         user.username
-      }&key=${randomString}`
+      }&key=${generatedKey}`
     };
 
     // this.mail.messages().send(data, function(err, body) {
@@ -49,13 +57,13 @@ class UserController {
     //   console.log(body);
     // });
 
-    this.nodemailer.mail(data, function(err, info, message) {
+    nodemailer.sendTestMail(data, function(err, info, message) {
       if (err) {
         return Boom.internal("Problem sending email.");
       }
       console.log("Message sent: %s", info.messageId);
-      console.log('Preview URL: %s', message);
-    })
+      console.log("Preview URL: %s", message);
+    });
 
     return {
       message: `Thank you for registering, we've dispatched an email to ${
@@ -66,10 +74,15 @@ class UserController {
 
   async verify(req, reply) {
     const { key, username } = req.body;
-    // const { app } = this;
-    const asyncGet = promisify(this.redis.get).bind(this.redis);
-    const verificationKey = `${username}:verify`;
-    const verified = await asyncGet(verificationKey);
+    const { redis } = this;
+    const verificationKey = `${username.toLowerCase()}:verify`;
+    let verified;
+
+    try {
+      verified = await redis.get(verificationKey);
+    } catch (e) {
+      return Boom.internal(e);
+    }
 
     if (verified) {
       if (verified === key) {
@@ -98,7 +111,6 @@ class UserController {
   async login(req, reply) {
     const { email, password } = req.body.credentials;
     const asyncJwtSign = promisify(this.jwt.sign);
-    const lockOutTime = Date.now() + 3600000 * 2;
     const resetLoginAttempts = User.query()
       .patch({
         loginAttempts: 5
@@ -115,6 +127,7 @@ class UserController {
           email,
           approved: true
         })
+        .first()
         .throwIfNotFound();
 
       if (!user) {
@@ -122,7 +135,8 @@ class UserController {
       }
 
       if (user && !user.loginAttempts) {
-        if (lockOutTime > Date.now()) {
+        //if lockOutTime is after the Date.now, we have to wait.
+        if (isAfter(addHours(user.last_login_attempt, 6), Date.now())) {
           return Boom.badData(
             "Too many failed login attempts; your account has been locked for 3 hours. To regain access immediately, reset your password."
           );
@@ -133,7 +147,8 @@ class UserController {
         if (user.loginAttempts > 0) {
           await User.query()
             .patch({
-              loginAttempts: user.loginAttempts--
+              loginAttempts: user.loginAttempts--,
+              last_login_attempt: Date.now()
             })
             .where({
               email,
@@ -176,13 +191,69 @@ class UserController {
     };
   }
 
-  // async index(req, reply) {
-  //   return { message: "HELLO WORLD!" };
-  // }
+  async resendVerification(req, reply) {
+    const { redis, nodemailer } = this;
+    let key = `${req.params.username.toLowerCase()}:verify`,
+      verification;
+    try {
+      verification = JSON.parse(await redis.get(key));
+    } catch (e) {
+      console.log(e);
+      return Boom.internal(e);
+    }
 
-  async test(req, reply) {
+    if (verification && verification.grace) {
+      if (verification.grace > Date.now()) {
+        return Boom.conflict(
+          "You must wait 2 minutes before making another verification request."
+        );
+      }
+    }
+
+    if (!verification) {
+      let user;
+      try {
+        user = await User.query()
+          .where({ username: req.body.username, approved: false })
+          .select("email")
+          .first()
+          .throwIfNotFound();
+      } catch (e) {
+        return Boom.notFound("No user record found.");
+      }
+
+      const generatedKey = crypto.randomBytes(20).toString("hex");
+      const newKey = `${req.params.username.toLowerCase()}:verify`;
+
+      verification = {
+        username: req.body.username,
+        email: user.email,
+        key: generatedKey,
+        grace: addMinutes(Date.now(), 2)
+      };
+
+      redis.set(newKey, JSON.stringify(verification), "EX", 600);
+    }
+
+    const data = {
+      from: "noreply@bestinslot.org",
+      to: `${verification.email}`,
+      subject: "Please verify your account",
+      text: `Please copy and paste the following into your browser: http://localhost:8080/verify/?username=${
+        verification.username
+      }&key=${verification.key}`
+    };
+
+    nodemailer.sendTestMail(data, function(err, info, message) {
+      if (err) {
+        console.log(e);
+      }
+      console.log(message);
+    });
+
     return {
-      message: "THis is a test"
+      message:
+        "We've dispatched a new verification email. Please check your inbox."
     };
   }
 }
