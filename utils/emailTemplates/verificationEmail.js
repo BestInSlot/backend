@@ -9,16 +9,17 @@ module.exports = function(from, to, subject, key, host, username) {
   </body>
   </html>`;
 
-  let text = "Thanks for register! We've sent this email because you registered on our site (www.bestinslot.org).\n"; 
-  text +=  "Copy and paste the following into your broswer to complete the verification process and activate your account.\n"
-  text +=  "http://" + host + "/verify/?username=" + username + "&key=" + key;
+  let text =
+    "Thanks for register! We've sent this email because you registered on our site (www.bestinslot.org).\n";
+  text +=
+    "Copy and paste the following into your broswer to complete the verification process and activate your account.\n";
+  text += "http://" + host + "/verify/?username=" + username + "&key=" + key;
 
-
-    return {
-        from,
-        to,
-        subject,
-        html,
-        text
-    };
+  return {
+    from,
+    to,
+    subject,
+    html,
+    text
+  };
 };

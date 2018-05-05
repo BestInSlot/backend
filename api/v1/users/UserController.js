@@ -86,7 +86,7 @@ class UserController {
     }
 
     if (verified) {
-      if (verified === key) {
+      if (verified.key === key) {
         const user = await User.query()
           .patch({
             approved: true
@@ -144,7 +144,7 @@ class UserController {
         }
       }
 
-      if (await user.verifyPassword(password)) {
+      if (!await user.verifyPassword(password)) {
         if (user.loginAttempts > 0) {
           await User.query()
             .patch({
