@@ -112,7 +112,6 @@ class UserController {
 
   async login(req, reply) {
     const { email, password } = req.body.credentials;
-    const asyncJwtSign = promisify(this.jwt.sign);
     const resetLoginAttempts = User.query()
       .patch({
         loginAttempts: 5
@@ -144,7 +143,7 @@ class UserController {
         }
       }
 
-      if (!await user.verifyPassword(password)) {
+      if (!(await user.verifyPassword(password))) {
         if (user.loginAttempts > 0) {
           await User.query()
             .patch({
@@ -161,16 +160,20 @@ class UserController {
         await resetLoginAttempts;
       }
 
-      const userFields = ({ id, username, avatar, created_at } = user);
+      let userFields = ({ id, username, avatar, created_at } = user);
+      let token;
 
-      const token = await asyncJwtSign(
-        {
-          iss: "bestinslot.org",
-          exp: Math.floor(Date.now() / 1000 + 60 * 60),
-          sub: userFields
-        },
-        process.env.SECRET
-      );
+      try {
+        token = jwt.sign({
+            iss: "bestinslot.org",
+            exp: Math.floor(Date.now() / 1000 + 60 * 60),
+            data: userFields
+          },
+          process.env.SECRET);
+      }
+      catch (e) {
+        Boom.internal(e);
+      }
 
       return {
         access_token: token
@@ -188,7 +191,7 @@ class UserController {
     }
 
     return {
-      user: req.auth
+      user: req.auth.data
     };
   }
 
@@ -262,6 +265,95 @@ class UserController {
         verification.email
       }. Please check your inbox.`
     };
+  }
+
+  async changePassword(req, reply) {
+    if (!req.auth) {
+      return Boom.unauthorized("Invalid permissions.");
+    }
+    const { username } = req.auth.data;
+    const { redis, nodemailer } = this;
+    const { currentPassword, newPassword } = req.body;
+    let user;
+
+    try {
+      user = await User.query()
+        .select("password", "email", "username")
+        .where({ username })
+        .first()
+        .throwIfNotFound();
+    } catch (e) {
+      return Boom.notFound("User record not found.");
+    }
+
+    if (!(await user.verifyPassword(currentPassword))) {
+      return Boom.badData("Current password doesn't match.");
+    } else if (await user.verifyPassword(newPassword)) {
+      return Boom.badData("New password cannot match current password.");
+    }
+
+    const val = {
+      username,
+      email,
+      new_password: newPassword,
+      key: crypto.randomBytes(20).toString("hex")
+    };
+
+    redis.set(
+      `${user.username}:change_password_verify`,
+      JSON.stringify(val),
+      "EX",
+      "600"
+    );
+
+    nodemailer.sendTestMail(pwdChangeEmail, function(err, info, message) {
+      if (err) {
+        return Boom.internal(err);
+      }
+      console.log("Message sent: %s", info.messageId);
+      console.log("Preview URL: %s", message);
+    })
+
+    return { message: `An email has been sent to ${user.email}. Please check your inbox.` };
+  }
+
+  async verifyPasswordChange(req, reply) {
+    if (!req.auth) {
+      return Boom.unauthorized("Invalid permissions.");
+    }
+
+    const { username } = req.auth.data;
+    const { key } = req.body;
+    const { redis } = this;
+    let verification, user;
+
+    try {
+      verification = JSON.parse(
+        await redis.get(`${user.username}:change_password_verify`)
+      );
+    }
+    catch (e) {
+      return Boom.notFound("Password request is invalid.");
+    }
+
+    try {
+      user = await User.query()
+        .patch({
+          password: verification.password
+        })
+        .where({ username })
+        .returning('*')
+        .first();
+    }
+    catch(e) {
+      return Boom.internal(e);
+    }
+    
+
+    return {
+      message: "Changes Saved."
+    }
+
   }
 }
 
