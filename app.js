@@ -5,7 +5,9 @@ const app = require("fastify")({
   logger: process.env.NODE_ENV === "development" ? true : false
 });
 
-const dbConf = require("./config/db/knexfile");
+// const dbConf = require("./config/db/setup");
+
+
 
 /*** SETUP SOME SECURITY MIDDLEWARE */
 app.use(require("cors")());
@@ -23,23 +25,7 @@ app.use(require("x-xss-protection")());
 
 /*** SETUP PLUGIN MIDDLEWARE AND DEPENDENCIES ***/
 app.register(require("fastify-boom"));
-app.register(
-  require("./config/db"),
-  dbConf({
-    client: process.env.DB_CLIENT,
-    database: process.env.DB_NAME,
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    migrations: {
-      directory: "./config/db/migrations",
-      tableName: "knex_migrations"
-    },
-    seeds: {
-      directory: "./config/db/seeds"
-    }
-  })
-);
+
 app.register(require("fastify-compress"), {
   global: false
 });
@@ -67,6 +53,13 @@ app.register(require("./utils/discourse"), {
 });
 
 /*** SETUP DB CONNECTION ***/
+const dbConf = require("./knexfile")[process.env.NODE_ENV];
+dbConf.client = process.env.DB_CLIENT;
+dbConf.connection.database = process.env.DB_NAME;
+dbConf.connection.user = process.env.DB_USER;
+dbConf.connection.pass = process.env.DB_PASSWORD;
+
+app.register(require("./config/db"), dbConf);
 
 const setupObjection = require('./utils/setupObjection');
 setupObjection(app);

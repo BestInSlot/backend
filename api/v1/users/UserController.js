@@ -3,6 +3,7 @@ const Boom = require("boom");
 const User = require("./UserModel");
 const crypto = require("crypto");
 const verificationEmail = require("../../../utils/emailTemplates/verificationEmail");
+const pwdChangeEmail = require("../../../utils/emailTemplates/pwdChangeEmail");
 const { addMinutes, addHours, isAfter } = require("date-fns");
 const { promisify } = require("util");
 
@@ -15,6 +16,7 @@ class UserController {
     const generatedKey = crypto.randomBytes(20).toString("hex");
     const key = `${credentials.username.toLowerCase()}:verify`;
     let user, verification;
+    
     try {
       user = await User.query()
         .insert(credentials)
@@ -22,32 +24,19 @@ class UserController {
     } catch (e) {
       console.log(e);
       if (e && e.code === "23505") {
-        return Boom.conflict("User already exists");
+        throw Boom.conflict("User already exists");
       }
-      return Boom.badRequest("Invalid credentials");
+      throw Boom.badRequest("Invalid credentials");
     }
 
-    try {
-      const val = {
-        username: user.username,
-        email: user.email,
-        key: generatedKey
-      };
-      verification = redis.set(key, JSON.stringify(val), "EX", 600);
-      console.log(verification);
-    } catch (e) {
-      console.log(e);
-      return Boom.internal(e.message);
-    }
+    const val = {
+      username: user.username,
+      email: user.email,
+      key: generatedKey
+    };
 
-    // this.mail.messages().send(data, function(err, body) {
-    //   if (err) {
-    //     console.log(err);
-    //     return Boom.internal(err);
-    //   }
-    //   console.log(body);
-    // });
-
+    redis.set(key, JSON.stringify(val), "EX", 600);
+     
     nodemailer.sendTestMail(
       verificationEmail(
         "noreply@bestinslot.org",
@@ -59,7 +48,7 @@ class UserController {
       ),
       function(err, info, message) {
         if (err) {
-          return Boom.internal("Problem sending email.");
+          throw Boom.internal("Problem sending email.");
         }
         console.log("Message sent: %s", info.messageId);
         console.log("Preview URL: %s", message);
@@ -77,41 +66,66 @@ class UserController {
     const { key, username } = req.body;
     const { redis } = this;
     const verificationKey = `${username.toLowerCase()}:verify`;
-    let verified;
+    let verified, user;
 
     try {
-      verified = await redis.get(verificationKey);
+      user = await User.query()
+        .where({ username, approved: false })
+        .select('approved')
+        .first()
+        .throwIfNotFound();
+    }
+    catch(e) {
+      throw Boom.notFound(e);
+    }
+
+    if (!user) {
+      throw Boom.notFound("Account is either approved or doesn't exist.");
+    }
+
+    try {
+      const data = await redis.get(verificationKey);
+      verified = JSON.parse(data);
+      console.log(verified)
     } catch (e) {
-      return Boom.internal(e);
+      console.log(e);
+      throw Boom.internal(e);
     }
 
-    if (verified) {
-      if (verified.key === key) {
-        const user = await User.query()
-          .patch({
-            approved: true
-          })
-          .where({
-            username
-          })
-          .returning("approved");
-
-        if (user.approved) {
-          redis.del(verificationKey);
-          return {
-            message: "Thanks! Your account is now verified and active."
-          };
-        }
-      } else {
-        return Boom.badData("Invalid key. Please try again.");
-      }
-    } else {
-      Boom.notFound("User doesn't exist or key expired. Please try again.");
+    if (!verified) {
+      throw Boom.badData("Invalid key. Please try again");
     }
+
+    if (verified && verified.key !== key) {
+      throw Boom.badData("Keys do not match.")
+    }
+
+    try {
+      user = await User.query()
+        .patch({
+          approved: true
+        })
+        .where({
+          username
+        })
+        .first()
+        .throwIfNotFound()
+        .returning("approved");
+    } catch (e) {
+      throw Boom.internal(e);
+    }
+
+    if (!user.approved) {
+      throw Boom.internal("We've encountered a problem trying to active your account. Please try again.")
+    }
+
+    reply.code(204);
   }
 
   async login(req, reply) {
+    let user;
     const { email, password } = req.body.credentials;
+    const { jwt } = this;
     const resetLoginAttempts = User.query()
       .patch({
         loginAttempts: 5
@@ -121,8 +135,12 @@ class UserController {
         approved: true
       });
 
-    if (email && password) {
-      const user = await User.query()
+    if (!email || !password) {
+     throw Boom.notFound("User credentials incorrect or doesn't exist.");
+    }
+
+    try {
+      user = await User.query()
         .eager("groups")
         .where({
           email,
@@ -130,62 +148,68 @@ class UserController {
         })
         .first()
         .throwIfNotFound();
-
-      if (!user) {
-        return Boom.notFound("User credentials incorrect or doesn't exist.");
-      }
-
-      if (user && !user.loginAttempts) {
-        if (isAfter(addHours(user.last_login_attempt, 6), Date.now())) {
-          return Boom.badData(
-            "Too many failed login attempts; your account has been locked for 3 hours. To regain access immediately, reset your password."
-          );
-        }
-      }
-
-      if (!(await user.verifyPassword(password))) {
-        if (user.loginAttempts > 0) {
-          await User.query()
-            .patch({
-              loginAttempts: user.loginAttempts--,
-              last_login_attempt: Date.now()
-            })
-            .where({
-              email,
-              approved: true
-            });
-        }
-        return Boom.badData("User credentials incorrect or doesn't exist");
-      } else {
-        await resetLoginAttempts;
-      }
-
-      let userFields = ({ id, username, avatar, created_at } = user);
-      let token;
-
-      try {
-        token = jwt.sign({
-            iss: "bestinslot.org",
-            exp: Math.floor(Date.now() / 1000 + 60 * 60),
-            data: userFields
-          },
-          process.env.SECRET);
-      }
-      catch (e) {
-        Boom.internal(e);
-      }
-
-      return {
-        access_token: token
-      };
-    } else {
-      Boom.notFound("User credentials incorrect or doesn't exist.");
     }
+    catch(e) {
+      throw Boom.notFound(e);
+    }
+
+    if (!user) {
+      throw Boom.notFound("User credentials incorrect or doesn't exist.");
+    }
+
+    if (user && !user.loginAttempts) {
+      if (isAfter(addHours(user.last_login_attempt, 6), Date.now())) {
+        throw Boom.badData(
+          "Too many failed login attempts; your account has been locked for 3 hours. To regain access immediately, reset your password."
+        );
+      }
+    }
+
+    if (!(await user.verifyPassword(password))) {
+      if (user.loginAttempts > 0) {
+        await User.query()
+          .patch({
+            loginAttempts: user.loginAttempts--,
+            last_login_attempt: Date.now()
+          })
+          .where({
+            email,
+            approved: true
+          });
+      }
+      throw Boom.badData("User credentials incorrect or doesn't exist");
+    } else {
+      await resetLoginAttempts;
+    }
+
+    let userFields = ({
+      id,
+      username,
+      avatar,
+      created_at
+    } = user);
+    let token;
+
+    try {
+      token = jwt.sign({
+          iss: "bestinslot.org",
+          exp: Math.floor(Date.now() / 1000 + 60 * 60),
+          data: userFields
+        },
+        process.env.SECRET
+      );
+    } catch (e) {
+      Boom.internal(e);
+    }
+
+    return {
+      access_token: token
+    };
   }
 
   async me(req, reply) {
     if (!req.auth) {
-      return Boom.unauthorized(
+      throw Boom.unauthorized(
         "You do not have privilages to access this information."
       );
     }
@@ -201,15 +225,16 @@ class UserController {
       verification;
 
     try {
-      verification = JSON.parse(await redis.get(key));
+      const data = await redis.get(key)
+      verification = JSON.parse(data);
     } catch (e) {
       console.log(e);
-      return Boom.internal(e);
+      throw Boom.internal(e);
     }
 
     if (verification && verification.grace) {
       if (isAfter(verification.grace, Date.now())) {
-        return Boom.conflict(
+        throw Boom.conflict(
           "You must wait 2 minutes before making another verification request."
         );
       }
@@ -224,7 +249,7 @@ class UserController {
           .first()
           .throwIfNotFound();
       } catch (e) {
-        return Boom.notFound("No user record found.");
+        throw Boom.notFound("No user record found.");
       }
 
       const generatedKey = crypto.randomBytes(20).toString("hex");
@@ -248,12 +273,12 @@ class UserController {
         verifcation.email,
         "Please verify your account",
         verification.key,
-        process.env.CLIENT_URL,
+        `${process.env.CLIENT_URL}:${process.env.CLIENT_PORT}`,
         verifcation.username
       ),
       function(err, info, message) {
         if (err) {
-          return Boom.internal("Problem sending email.");
+          throw Boom.internal("Problem sending email.");
         }
         console.log("Message sent: %s", info.messageId);
         console.log("Preview URL: %s", message);
@@ -269,7 +294,7 @@ class UserController {
 
   async changePassword(req, reply) {
     if (!req.auth) {
-      return Boom.unauthorized("Invalid permissions.");
+      throw Boom.unauthorized("Invalid permissions.");
     }
     const { username } = req.auth.data;
     const { redis, nodemailer } = this;
@@ -283,13 +308,13 @@ class UserController {
         .first()
         .throwIfNotFound();
     } catch (e) {
-      return Boom.notFound("User record not found.");
+      throw Boom.notFound("User record not found.");
     }
 
     if (!(await user.verifyPassword(currentPassword))) {
-      return Boom.badData("Current password doesn't match.");
+      throw Boom.badData("Current password doesn't match.");
     } else if (await user.verifyPassword(newPassword)) {
-      return Boom.badData("New password cannot match current password.");
+      throw Boom.badData("New password cannot match current password.");
     }
 
     const val = {
@@ -308,18 +333,22 @@ class UserController {
 
     nodemailer.sendTestMail(pwdChangeEmail, function(err, info, message) {
       if (err) {
-        return Boom.internal(err);
+        throw Boom.internal(err);
       }
       console.log("Message sent: %s", info.messageId);
       console.log("Preview URL: %s", message);
-    })
+    });
 
-    return { message: `An email has been sent to ${user.email}. Please check your inbox.` };
+    return {
+      message: `An email has been sent to ${
+        user.email
+      }. Please check your inbox.`
+    };
   }
 
   async verifyPasswordChange(req, reply) {
     if (!req.auth) {
-      return Boom.unauthorized("Invalid permissions.");
+      throw Boom.unauthorized("Invalid permissions.");
     }
 
     const { username } = req.auth.data;
@@ -331,9 +360,8 @@ class UserController {
       verification = JSON.parse(
         await redis.get(`${user.username}:change_password_verify`)
       );
-    }
-    catch (e) {
-      return Boom.notFound("Password request is invalid.");
+    } catch (e) {
+      throw Boom.notFound("Password request is invalid.");
     }
 
     try {
@@ -342,18 +370,13 @@ class UserController {
           password: verification.password
         })
         .where({ username })
-        .returning('*')
+        .returning("*")
         .first();
-    }
-    catch(e) {
-      return Boom.internal(e);
-    }
-    
-
-    return {
-      message: "Changes Saved."
+    } catch (e) {
+      throw Boom.internal(e);
     }
 
+    reply.code(204);
   }
 }
 
