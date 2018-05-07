@@ -1,6 +1,6 @@
 exports.up = function(knex, Promise) {
   return Promise.resolve(
-    knex.schema.hasTable("users").then(exists => {
+    knex.schema.hasTable("posts").then(exists => {
       if (!exists) {
         return knex.schema.createTable("posts", function(t) {
           t
@@ -14,6 +14,7 @@ exports.up = function(knex, Promise) {
           t.string("forum_slug");
           t.text("body");
           t.boolean("featured").default(false);
+          t.boolean("draft").default(false);
           t.timestamps();
           t.unique("slug");
         });
@@ -23,5 +24,11 @@ exports.up = function(knex, Promise) {
 };
 
 exports.down = function(knex, Promise) {
-  return Promise.resolve(knex.schema.dropTable("posts"));
+  return Promise.resolve(
+    knex.schema.hasTable("posts").then(exists => {
+      if (exists) {
+        return knex.schema.dropTable("posts");
+      }
+    })
+  );
 };

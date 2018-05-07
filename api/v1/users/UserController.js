@@ -80,7 +80,9 @@ class UserController {
     }
 
     if (!user) {
-      throw Boom.notFound("Account is either approved or doesn't exist.");
+      return {
+        approved: true
+      }
     }
 
     try {
@@ -93,7 +95,10 @@ class UserController {
     }
 
     if (!verified) {
-      throw Boom.badData("Invalid key. Please try again");
+      return {
+        expired: true,
+        message: 'Key has expired. Please try again.'
+      };
     }
 
     if (verified && verified.key !== key) {
@@ -119,7 +124,9 @@ class UserController {
       throw Boom.internal("We've encountered a problem trying to active your account. Please try again.")
     }
 
-    reply.code(204);
+    return {
+      approved: true
+    }
   }
 
   async login(req, reply) {

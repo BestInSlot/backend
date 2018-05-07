@@ -22,7 +22,7 @@ exports.up = function(knex, Promise) {
     }),
     knex.schema.hasTable("user_groups").then(exists => {
       if (!exists) {
-        return knex.schema.createTable("users_groups", function(t) {
+        return knex.schema.createTable("user_groups", function(t) {
           t.integer('user_id').references('users.id');
           t.integer('group_id').references('groups.id');
         })

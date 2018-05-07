@@ -38,7 +38,7 @@ module.exports = function(app, opts, next) {
   });
 
   app.route({
-    method: "POST",
+    method: "PUT",
     url: "/verify",
     schema: verifySchema,
     handler: userController.verify
