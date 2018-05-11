@@ -35,7 +35,13 @@ class UserController {
       key: generatedKey
     };
 
-    redis.set(key, JSON.stringify(val), "EX", 600);
+    try {
+      redis.set(key, JSON.stringify(val), "EX", 600);
+    }
+    catch (e) {
+      console.log(e);
+      throw Boom.internal(e);
+    }
      
     nodemailer.sendTestMail(
       verificationEmail(
@@ -65,6 +71,8 @@ class UserController {
   async verify(req, reply) {
     const { key, username } = req.body;
     const { redis } = this;
+    const date = new Date();
+    const isoString = date.toISOString();
     const verificationKey = `${username.toLowerCase()}:verify`;
     let verified, user;
 
@@ -130,12 +138,12 @@ class UserController {
   }
 
   async login(req, reply) {
-    let user;
-    const { email, password } = req.body.credentials;
+    let user, token;
+    const { email, password } = req.body;
     const { jwt } = this;
     const resetLoginAttempts = User.query()
       .patch({
-        loginAttempts: 5
+        login_attempts: 5
       })
       .where({
         email,
@@ -148,7 +156,6 @@ class UserController {
 
     try {
       user = await User.query()
-        .eager("groups")
         .where({
           email,
           approved: true
@@ -164,7 +171,7 @@ class UserController {
       throw Boom.notFound("User credentials incorrect or doesn't exist.");
     }
 
-    if (user && !user.loginAttempts) {
+    if (user && !user.login_attempts) {
       if (isAfter(addHours(user.last_login_attempt, 6), Date.now())) {
         throw Boom.badData(
           "Too many failed login attempts; your account has been locked for 3 hours. To regain access immediately, reset your password."
@@ -173,11 +180,11 @@ class UserController {
     }
 
     if (!(await user.verifyPassword(password))) {
-      if (user.loginAttempts > 0) {
+      if (user.login_attempts > 0) {
         await User.query()
           .patch({
-            loginAttempts: user.loginAttempts--,
-            last_login_attempt: Date.now()
+            login_attempts: user.login_attempts--,
+            last_login_attempt: isoString
           })
           .where({
             email,
@@ -188,25 +195,27 @@ class UserController {
     } else {
       await resetLoginAttempts;
     }
+    
+    console.log(user);
 
-    let userFields = ({
-      id,
-      username,
-      avatar,
-      created_at
-    } = user);
-    let token;
+  
 
     try {
       token = jwt.sign({
           iss: "bestinslot.org",
           exp: Math.floor(Date.now() / 1000 + 60 * 60),
-          data: userFields
-        },
-        process.env.SECRET
+          data: {
+            id: user.id,
+            email: user.email,
+            username: user.username,
+            avatar: user.avatar,
+            created_at: user.created_at,
+            updated_at: user.updated_at
+          }
+        }
       );
     } catch (e) {
-      Boom.internal(e);
+      throw Boom.internal(e);
     }
 
     return {

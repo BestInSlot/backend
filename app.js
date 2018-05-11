@@ -61,8 +61,10 @@ dbConf.connection.pass = process.env.DB_PASSWORD;
 
 app.register(require("./config/db"), dbConf);
 
-const setupObjection = require('./utils/setupObjection');
-setupObjection(app);
+// const setupObjection = require('./utils/setupObjection');
+// setupObjection(app);
+
+app.register(require("./utils/setupORM"));
 
 /*** SETUP ROUTES ***/
 app.register(require("./api/v1/users/routes.js"), {

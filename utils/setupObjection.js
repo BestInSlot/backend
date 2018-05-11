@@ -1,6 +1,6 @@
-'use strict';
-const { Model } = require("objection");
-module.exports = async function(app, model) {
+"use strict";
+
+module.exports = async function(app) {
     try {
         await app.ready();
         Model.knex(app.knex);

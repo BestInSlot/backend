@@ -5,7 +5,8 @@
   "main": "./app.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "NODE_ENV=development nodemon ./app"
+    "start": "NODE_ENV=development nodemon ./app",
+    "dev": "NODE_ENV=development node ./app"
   },
   "author": "",
   "license": "ISC",
@@ -30,6 +31,7 @@
     "knex": "^0.14.6",
     "mailgun-js": "^0.17.0",
     "objection": "^1.1.7",
+    "objection-db-errors": "^1.0.0",
     "pg": "^7.4.1",
     "require-all": "^2.2.0",
     "x-xss-protection": "^1.1.0"
