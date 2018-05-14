@@ -1,4 +1,6 @@
 #ignore the following...
 /.env
+/Dockerfile
+/docker-compose.*
 /knexfile.js
 /node_modules

@@ -16,9 +16,13 @@ module.exports = function(opts = {}) {
         if (typeof req[key] === "object" && !Array.isArray(req[key])) {
           _clean(req[key]);
         } else if (Array.isArray(req[key])) {
-          continue;
+          sanitized[key] = req[key].map(prop => {
+            if (typeof prop !== "number") {
+              return _clean(prop);
+            }
+          })
         } else if (typeof req[key] === "string") {
-          sanitized = sanitize(req[key], _opts);
+          sanitized[key] = sanitize(req[key], _opts);
         }
       }
     } else {

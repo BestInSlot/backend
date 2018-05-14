@@ -91,8 +91,22 @@ function errorHandler(err, req, reply) {
       type: "UnknownDatabaseError",
       data: {}
     });
+  } else if (err && err.name === "UnauthorizedError") {
+    if (err.message === "jwt expired") {
+      reply.code(401).send({
+        message: err.message,
+        type: "UnauthorizedError",
+        token_expired: true
+      });
+    }
+  } else if (err && err.isBoom) {
+    reply
+      .code(err.output.statusCode)
+      .type("application/json")
+      .headers(err.output.headers)
+      .send(err.output.payload);
   } else {
-    reply.status(500).send({
+    reply.code(500).send({
       message: err.message,
       type: 'UnknownError',
       data: {}

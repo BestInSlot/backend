@@ -1,6 +1,5 @@
 const fp = require("fastify-plugin");
 const expressJwt = require("express-jwt");
-const UnauthorizedError = require("../node_modules/express-jwt/lib/errors/UnauthorizedError.js");
 const guard = require("express-jwt-permissions");
 
 module.exports = fp(function(fastify, opts, next) {
@@ -18,15 +17,6 @@ module.exports = fp(function(fastify, opts, next) {
 
     fastify
       .decorate("auth", expressJwt(_opts))
-      .setErrorHandler(function(err, req, reply) {
-        if (err && err instanceof UnauthorizedError) {
-          if (err.message === "token_expired") {
-            return reply.code(401).send({ token_expired: true });
-          } else {
-            return { message: "invalid_token..." };
-          }
-        }
-      });
   } catch (err) {
     return next(err);
   }

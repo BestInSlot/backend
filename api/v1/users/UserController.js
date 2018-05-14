@@ -1,5 +1,7 @@
 "use strict";
 const Boom = require("boom");
+const Disc = require("../../../utils/discourse/sso");
+const sso = new Disc(process.env.DISCOURSE_SECRET);
 const User = require("./UserModel");
 const crypto = require("crypto");
 const verificationEmail = require("../../../utils/emailTemplates/verificationEmail");
@@ -16,7 +18,7 @@ class UserController {
     const generatedKey = crypto.randomBytes(20).toString("hex");
     const key = `${credentials.username.toLowerCase()}:verify`;
     let user, verification;
-    
+
     try {
       user = await User.query()
         .insert(credentials)
@@ -37,12 +39,11 @@ class UserController {
 
     try {
       redis.set(key, JSON.stringify(val), "EX", 600);
-    }
-    catch (e) {
+    } catch (e) {
       console.log(e);
       throw Boom.internal(e);
     }
-     
+
     nodemailer.sendTestMail(
       verificationEmail(
         "noreply@bestinslot.org",
@@ -79,24 +80,23 @@ class UserController {
     try {
       user = await User.query()
         .where({ username, approved: false })
-        .select('approved')
+        .select("approved")
         .first()
         .throwIfNotFound();
-    }
-    catch(e) {
+    } catch (e) {
       throw Boom.notFound(e);
     }
 
-    if (!user) {
-      return {
-        approved: true
-      }
-    }
+    // if (!user) {
+    //   return {
+    //     approved: false
+    //   };
+    // }
 
     try {
       const data = await redis.get(verificationKey);
       verified = JSON.parse(data);
-      console.log(verified)
+      console.log(verified);
     } catch (e) {
       console.log(e);
       throw Boom.internal(e);
@@ -105,12 +105,12 @@ class UserController {
     if (!verified) {
       return {
         expired: true,
-        message: 'Key has expired. Please try again.'
+        message: "Key has expired. Please try again."
       };
     }
 
     if (verified && verified.key !== key) {
-      throw Boom.badData("Keys do not match.")
+      throw Boom.badData("Keys do not match.");
     }
 
     try {
@@ -129,12 +129,14 @@ class UserController {
     }
 
     if (!user.approved) {
-      throw Boom.internal("We've encountered a problem trying to active your account. Please try again.")
+      throw Boom.internal(
+        "We've encountered a problem trying to active your account. Please try again."
+      );
     }
 
     return {
       approved: true
-    }
+    };
   }
 
   async login(req, reply) {
@@ -151,7 +153,7 @@ class UserController {
       });
 
     if (!email || !password) {
-     throw Boom.notFound("User credentials incorrect or doesn't exist.");
+      throw Boom.notFound("User credentials incorrect or doesn't exist.");
     }
 
     try {
@@ -162,8 +164,7 @@ class UserController {
         })
         .first()
         .throwIfNotFound();
-    }
-    catch(e) {
+    } catch (e) {
       throw Boom.notFound(e);
     }
 
@@ -195,25 +196,22 @@ class UserController {
     } else {
       await resetLoginAttempts;
     }
-    
-    console.log(user);
 
-  
+    console.log(user);
 
     try {
       token = jwt.sign({
-          iss: "bestinslot.org",
-          exp: Math.floor(Date.now() / 1000 + 60 * 60),
-          data: {
-            id: user.id,
-            email: user.email,
-            username: user.username,
-            avatar: user.avatar,
-            created_at: user.created_at,
-            updated_at: user.updated_at
-          }
+        iss: "bestinslot.org",
+        exp: Math.floor(Date.now() / 1000 + 60 * 60),
+        data: {
+          id: user.id,
+          email: user.email,
+          username: user.username,
+          avatar: user.avatar,
+          created_at: user.created_at,
+          updated_at: user.updated_at
         }
-      );
+      });
     } catch (e) {
       throw Boom.internal(e);
     }
@@ -235,13 +233,63 @@ class UserController {
     };
   }
 
+  async logIntoForum(req, reply) {
+    if (!req.auth) {
+      throw Boom.forbidden("You don't have permission to access this.");
+    }
+
+    const { id, email } = req.auth.data;
+    const { payload, sig } = req.body;
+
+    if (!sso.validate(payload, sig)) {
+      throw Boom.badData("Payload and/or sig is invalid.");
+    }
+
+    const nonce = sso.getNonce(payload);
+
+    const response = sso.buildLoginString({
+      external_id: id,
+      nonce,
+      email
+    });
+
+    return {
+      sso: response.sso,
+      sig: response.sig
+    };
+  }
+
+  async logout(req, reply) {
+    if (req.auth) {
+      throw Boom.forbidden("You don't have permission to access this.");
+    }
+
+    let { discourse } = this,
+      userId;
+
+    try {
+      userId = await discourse.users().findOneByExternalId(req.auth.user.id);
+    } catch (e) {
+      throw Boom.internal(e);
+    }
+
+    try {
+      await discourse.users().logout(userId);
+    } catch (e) {
+      console.log(e);
+      throw Boom.internal(e);
+    }
+
+    reply.code(204);
+  }
+
   async resendVerification(req, reply) {
     const { redis, nodemailer } = this;
     let key = `${req.params.username.toLowerCase()}:verify`,
       verification;
 
     try {
-      const data = await redis.get(key)
+      const data = await redis.get(key);
       verification = JSON.parse(data);
     } catch (e) {
       console.log(e);
