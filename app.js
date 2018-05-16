@@ -20,6 +20,9 @@ app.use(
 app.use(require("x-xss-protection")());
 
 /*** SETUP PLUGIN MIDDLEWARE AND DEPENDENCIES ***/
+app.register(require("fastify-multipart"), {
+  fileSize: 73728
+});
 app.register(require("fastify-compress"), {
   global: false
 });

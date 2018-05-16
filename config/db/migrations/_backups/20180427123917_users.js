@@ -12,8 +12,8 @@ exports.up = function(knex, Promise) {
           t.string("avatar").default("/assets/images/avatar-placeholder.png");
           t.boolean("approved").defaultTo(false);
           t.integer("login_attempts").default(5);
-          t.bigInteger("last_login_attempt").nullable();
-          t.bigInteger("last_password_recovery_attempt").nullable();
+          t.string("last_login_attempt");
+          t.string("last_password_recovery_attempt");
           t.timestamps();
           t.unique("email");
           t.unique("username");

@@ -1,13 +1,34 @@
 "use strict";
+const path = require("path");
+const verificationEmail = require(path.resolve(
+  process.cwd(),
+  "utils/emailTemplates/verificationEmail"
+));
+const pwdChangeEmail = require(path.resolve(
+  process.cwd(),
+  "utils/emailTemplates/pwdChangeEmail"
+));
+const pwdConfirmEmail = require(path.resolve(
+  process.cwd(),
+  "utils/emailTemplates/pwdConfirmEmail"
+));
+const {
+  resetLoginAttempts,
+  createDirectory,
+  generateRandomString
+} = require(path.resolve(process.cwd(), "utils/helpers"));
+
+const { promisify } = require("util");
+const { addMinutes, addHours, isAfter } = require("date-fns");
+const rename = promisify(fs.rename);
+const Disc = require(path.resolve(process.cwd(), "utils/discourse/sso"));
 const Boom = require("boom");
-const Disc = require("../../../utils/discourse/sso");
-const sso = new Disc(process.env.DISCOURSE_SECRET);
 const User = require("./UserModel");
 const crypto = require("crypto");
-const verificationEmail = require("../../../utils/emailTemplates/verificationEmail");
-const pwdChangeEmail = require("../../../utils/emailTemplates/pwdChangeEmail");
-const { addMinutes, addHours, isAfter } = require("date-fns");
-const { promisify } = require("util");
+const generatePassword = require("generate-password");
+const fs = require("fs");
+const pump = require("pump");
+const sso = new Disc(process.env.DISCOURSE_SECRET);
 
 class UserController {
   constructor() {}
@@ -50,7 +71,7 @@ class UserController {
         user.email,
         "Please verify your account",
         generatedKey,
-        process.env.CLIENT_URL,
+        `${process.env.CLIENT_URL}:${process.env.CLIENT_PORT}`,
         user.username
       ),
       function(err, info, message) {
@@ -72,10 +93,9 @@ class UserController {
   async verify(req, reply) {
     const { key, username } = req.body;
     const { redis } = this;
-    const date = new Date();
-    const isoString = date.toISOString();
     const verificationKey = `${username.toLowerCase()}:verify`;
-    let verified, user;
+    const dirName = crypto.randomBytes(20).toString("hex");
+    let verified, user, userFolderPath;
 
     try {
       user = await User.query()
@@ -87,18 +107,10 @@ class UserController {
       throw Boom.notFound(e);
     }
 
-    // if (!user) {
-    //   return {
-    //     approved: false
-    //   };
-    // }
-
     try {
       const data = await redis.get(verificationKey);
       verified = JSON.parse(data);
-      console.log(verified);
     } catch (e) {
-      console.log(e);
       throw Boom.internal(e);
     }
 
@@ -114,9 +126,17 @@ class UserController {
     }
 
     try {
+      userFolderPath = await createDirectory(dirName);
+    } catch (e) {
+      console.log(e);
+      throw Boom.internal(e);
+    }
+
+    try {
       user = await User.query()
         .patch({
-          approved: true
+          approved: true,
+          avatar: userFolderPath
         })
         .where({
           username
@@ -134,6 +154,8 @@ class UserController {
       );
     }
 
+    redis.del(verificationKey);
+
     return {
       approved: true
     };
@@ -143,14 +165,6 @@ class UserController {
     let user, token;
     const { email, password } = req.body;
     const { jwt } = this;
-    const resetLoginAttempts = User.query()
-      .patch({
-        login_attempts: 5
-      })
-      .where({
-        email,
-        approved: true
-      });
 
     if (!email || !password) {
       throw Boom.notFound("User credentials incorrect or doesn't exist.");
@@ -174,7 +188,7 @@ class UserController {
 
     if (user && !user.login_attempts) {
       if (isAfter(addHours(user.last_login_attempt, 6), Date.now())) {
-        throw Boom.badData(
+        throw Boom.forbidden(
           "Too many failed login attempts; your account has been locked for 3 hours. To regain access immediately, reset your password."
         );
       }
@@ -182,19 +196,24 @@ class UserController {
 
     if (!(await user.verifyPassword(password))) {
       if (user.login_attempts > 0) {
-        await User.query()
-          .patch({
-            login_attempts: user.login_attempts--,
-            last_login_attempt: isoString
-          })
-          .where({
-            email,
-            approved: true
-          });
+        try {
+          await User.query()
+            .patch({
+              login_attempts: user.login_attempts - 1,
+              last_login_attempt: new Date().toISOString()
+            })
+            .where({
+              email,
+              approved: true
+            });
+          console.log(user.login_attempts);
+        } catch (e) {
+          console.log(e);
+        }
       }
-      throw Boom.badData("User credentials incorrect or doesn't exist");
+      throw Boom.badRequest("User credentials incorrect or doesn't exist");
     } else {
-      await resetLoginAttempts;
+      resetLoginAttempts.call(User, email);
     }
 
     console.log(user);
@@ -323,12 +342,12 @@ class UserController {
         username: req.body.username,
         email: user.email,
         key: generatedKey,
-        grace: addMinutes(Date.now(), 2)
+        grace: addMinutes(Date.now().toISOString(), 2)
       };
 
       redis.set(newKey, JSON.stringify(verification), "EX", 600);
     } else {
-      verification.grace = addMinutes(Date.now(), 2);
+      verification.grace = addMinutes(new Date().toISOString(), 2);
     }
 
     nodemailer.sendTestMail(
@@ -388,12 +407,16 @@ class UserController {
       key: crypto.randomBytes(20).toString("hex")
     };
 
-    redis.set(
-      `${user.username}:change_password_verify`,
-      JSON.stringify(val),
-      "EX",
-      "600"
-    );
+    try {
+      redis.set(
+        `${user.username}:change_password_verify`,
+        JSON.stringify(val),
+        "EX",
+        "600"
+      );
+    } catch (e) {
+      throw Boom.internal(e);
+    }
 
     nodemailer.sendTestMail(pwdChangeEmail, function(err, info, message) {
       if (err) {
@@ -411,36 +434,283 @@ class UserController {
   }
 
   async verifyPasswordChange(req, reply) {
-    if (!req.auth) {
-      throw Boom.unauthorized("Invalid permissions.");
-    }
+    // if (!req.auth) {
+    //   throw Boom.unauthorized("Invalid permissions.");
+    // }
 
-    const { username } = req.auth.data;
+    const { email } = req.auth.data || req.body;
     const { key } = req.body;
     const { redis } = this;
+    const rKey = `${username.toLowerCase()}:change_password_verify`;
     let verification, user;
 
     try {
-      verification = JSON.parse(
-        await redis.get(`${user.username}:change_password_verify`)
-      );
+      verification = JSON.parse(await redis.get(rKey));
     } catch (e) {
+      console.error(e);
+      throw Boom.notFound("Password request is invalid.");
+    }
+
+    if (!verification) {
       throw Boom.notFound("Password request is invalid.");
     }
 
     try {
       user = await User.query()
         .patch({
-          password: verification.password
+          password: verification.new_password,
+          login_attempts: 5
         })
-        .where({ username })
+        .where({ email })
         .returning("*")
         .first();
     } catch (e) {
       throw Boom.internal(e);
     }
 
-    reply.code(204);
+    if (user && !user.login_attempts) {
+      resetLoginAttempts.call(User, email);
+    }
+
+    nodemailer.sendTestMail(
+      pwdConfirmEmail(
+        "noreply@bestinslot.org",
+        email,
+        "Password Reset/Change Confirmed",
+        verification.new_password
+      ),
+      function(err, info, message) {
+        if (err) {
+          console.error(err);
+        }
+        console.log(info);
+        console.log(`Preview email URL: ${message}`);
+      }
+    );
+
+    redis.del(rKey);
+    reply.code(204).send();
+  }
+
+  async resetPassword(req, reply) {
+    const { email } = req.body;
+    const { redis, nodemailer } = this;
+    const rKey = `${username.toLowerCase()}:change_password_verify`;
+    let resetRequest, user;
+
+    try {
+      user = await User.query()
+        .select("username")
+        .where({ email })
+        .first()
+        .throwIfNotFound();
+    } catch (e) {
+      throw Boom.notFound("User record not found.");
+    }
+
+    try {
+      const data = await redis.get(rKey);
+      resetRequest = JSON.parse(data);
+    } catch (e) {
+      throw Boom.internal(e);
+    }
+
+    if (!resetRequest) {
+      const newPassword = generatePassword.generate({
+        length: 10,
+        numbers: true,
+        uppercase: true
+      });
+
+      resetRequest = {
+        reset: true,
+        email,
+        username: user.username,
+        new_password: newPassword,
+        key: crypto.randomBytes(20).toString("hex")
+      };
+
+      try {
+        redis.set(rKey, JSON.stringify(resetRequest), "EX", 600);
+      } catch (e) {
+        throw Boom.internal(e);
+      }
+    }
+
+    nodemailer.sendTestMail(
+      pwdChangeEmail(
+        "noreply@bestinslot.org",
+        resetRequest.email,
+        "Password Reset",
+        resetRequest.key,
+        `${process.env.CLIENT_URL}:${process.env.CLIENT_PORT}`,
+        function(err, info, message) {
+          if (err) {
+            console.error(err);
+          }
+          console.log(info);
+          console.log(`Preview email URL: ${message}`);
+        }
+      )
+    );
+
+    reply.code(204).send();
+  }
+
+  async changeEmail(req, reply) {
+    if (!req.auth) {
+      throw Boom.unauthorized("Invalid Permissions");
+    }
+
+    const { email, username } = req.auth.data;
+    const { redis, nodemailer } = this;
+    let user,
+      redisKey = `${username.toLowerCase()}:verify_email_change`;
+
+    if (req.method === "POST") {
+      const { password, newEmail } = req.body;
+
+      try {
+        user = await User.query()
+          .where({ email })
+          .first();
+      } catch (e) {
+        throw Boom.internal(e);
+      }
+
+      if (user.email === newEmail) {
+        throw Boom.badData("New email cannot match current email.");
+      }
+
+      try {
+        redis.set(
+          redisKey,
+          JSON.stringify({
+            username,
+            key: crypto.randomBytes(20).toString("hex"),
+            new_email: newEmail
+          }),
+          "EX",
+          600
+        );
+      } catch (e) {
+        console.log(e);
+        throw Boom.internal(e);
+      }
+
+      nodemailer.sendTestMail(changeEmailVerification(), function(
+        err,
+        info,
+        message
+      ) {
+        if (err) {
+          console.log(err);
+        }
+      });
+
+      reply.code(204).send();
+    } else {
+      // PUT
+      let { key } = req.body;
+      let emailVerification, data;
+
+      try {
+        data = await redis.get(redisKey);
+      } catch (e) {
+        throw Boom.badRequest("Invalid Key");
+      }
+
+      if (!data) {
+        throw Boom.notFound(e);
+      }
+
+      try {
+        emailVerification = JSON.parse(data);
+      } catch (e) {
+        console.log(e);
+        throw Boom.internal("Encountered an internal server error.");
+      }
+
+      if (emailVerification.key !== key) {
+        throw Boom.badData("Incorrect or invalid Key.");
+      }
+
+      try {
+        const { new_email } = emailVerification;
+        user = await User.query()
+          .patch({ email: new_email })
+          .where({ username })
+          .first()
+          .returning("email");
+      } catch (e) {
+        console.log(e);
+      }
+
+      if (user.email !== emailVerification.new_email) {
+        throw Boom.internal(e);
+      }
+
+      reply.code(204).send();
+    }
+  }
+
+  async uploadAvatar(req, reply) {
+    if (!req.auth) {
+      throw Boom.unauthorized("Invalid permissions.");
+    }
+    const { username } = req.auth.data;
+    const regex = /(jpg|jpeg|png|svg)/i;
+
+    let filePath, user;
+
+    const mp = req.multipart(
+      async function(field, file, filename, encoding, mimetype) {
+        const d = path.join(createDirectory(username, 755), filename);
+        const dest = fs.createWriteStream(d);
+        const random = generateRandomString(40);
+        const ext = filename.split(/\./)[1];
+
+        file.on("limit", () => {
+          throw Boom.badRequest("File Limit Reached: Files cannot exceed 72kb");
+        });
+
+        pump(file, dest);
+
+        try {
+          filePath = path.join(
+            createDirectory(username, 755),
+            random.concat(`.${ext}`)
+          );
+          await rename(d, filePath);
+        } catch (e) {
+          console.log(e);
+        }
+      },
+      async function(err) {
+        if (err) {
+          throw Boom.internal(err);
+        }
+
+        try {
+          user = await User.query()
+            .patch({ avatar: filePath })
+            .where({ username });
+        } catch (e) {
+          throw Boom.internal(e);
+        }
+
+        return {
+          avatar: user.avatar
+        };
+      }
+    );
+
+    mp.on("file", function(fieldname, file, filename, encoding, mimetype) {
+      const ext = filename.split(/\./)[1];
+      if (!regex.test(ext)) {
+        throw Boom.badData("Invalid File Format");
+      }
+    });
   }
 }
 
