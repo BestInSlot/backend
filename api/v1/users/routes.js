@@ -51,7 +51,13 @@ module.exports = function(app, opts, next) {
   });
 
   app.route({
-    method: "PUT",
+    method: "POST",
+    url: "/reset-password",
+    handler: userController.resetPassword
+  })
+
+  app.route({
+    method: "POST",
     url: "/change-password",
     schema: {
       ...authSchema
@@ -64,11 +70,9 @@ module.exports = function(app, opts, next) {
     method: "PUT",
     url: "/change-password/verify",
     schema: {
-      ...authSchema,
       ...verifyPasswordChangeSchema
     },
-    beforeHandler: app.auth,
-    handler: userController.verifyPasswordChange
+    handler: userController.changePassword
   });
 
   next();
