@@ -20,7 +20,6 @@ function getProperty(payload, property) {
 
   if (Array.isArray(property)) {
     let result = {};
-    console.log(q);
     property.forEach(prop => {
       if (prop in q) {
         result[prop] = q[prop];
@@ -38,10 +37,10 @@ function getProperty(payload, property) {
   }
 }
 
-function validate(payload) {
+function validate(payload, secret) {
   const parts = payload.split(":");
   if (parts.length > 1) {
-    const hmac = getHmac();
+    const hmac = getHmac(secret);
     hmac.update(querystring.unescape(parts[0]));
     if (hmac.digest("hex") === parts[1]) {
       return true;
@@ -86,6 +85,41 @@ async function resetLoginAttempts(email) {
   }
 }
 
+function buildPaginationQuery(req) {
+  let query = this;
+
+  if (req.query.current && req.query.limit) {
+    const current = parseInt(req.query.current, 10),
+      limit = parseInt(req.query.limit, 10);
+
+    const start = (current - 1) * limit,
+      end = current * limit - 1;
+
+    query = query.range(start, end);
+  } else {
+    query = query.range(0, 19);
+  }
+
+  if (req.query.searchBy) {
+    if (req.query.searchBy.game) {
+      query = query.andWhere({ game: req.query.game }); 
+    }
+    if (req.query.searchBy.username) {
+      query = query.andWhere({ username: req.query.username });
+    }
+  }
+
+  if (req.query.filter)  {
+    if (req.query.filter.approved) {
+      query = query.andWhere({ approved: true });
+    } else {
+      query = query.andWhere({ approved: false });
+    }
+  }
+
+  return query;
+};
+
 async function createDirectory(dir, mode) {
   let dirPath = "/var/www/html/public/users/avatars";
   let p = path.join(dirPath, dir);
@@ -120,5 +154,6 @@ module.exports = {
   recaptchaVerify,
   getHmac,
   getProperty,
-  validate
+  validate,
+  buildPaginationQuery
 };

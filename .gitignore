@@ -3,6 +3,7 @@
 /Dockerfile
 /docker-compose.*
 /knexfile.js
+/_app.js
 /node_modules
 /.git
 /.DS_Store

@@ -3,8 +3,8 @@ const fp = require("fastify-plugin");
 const Boom = require("boom");
 
 function onError(err) {
-  console.log(err);
-  throw Boom.internal(err);
+  console.error(err);
+  throw new Error(error);
 }
 
 function setUp(fastify, opts, next) {
@@ -13,7 +13,8 @@ function setUp(fastify, opts, next) {
   opts = opts || {
     path: "/sockets",
     pingInterval: 10000,
-    pingTimeout: 5000
+    pingTimeout: 5000,
+    transports: ["websocket", "polling"]
   };
 
   if (fastify.redis) {
@@ -24,16 +25,13 @@ function setUp(fastify, opts, next) {
   }
 
   try {
-
     const emitter = require("socket.io-emitter")(redis);
     emitter.redis.on("error", onError);
     fastify.decorateReply("io", emitter);
-    
-    
-    const handler = require("socket.io")(fastify.server)
+
+    const handler = require("socket.io")(fastify.server);
     fastify.decorate("io", handler).onClose(done => fastify.io.close(done));
     next();
-
   } catch (err) {
     next(err);
   }

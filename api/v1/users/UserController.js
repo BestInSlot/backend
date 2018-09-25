@@ -1,25 +1,26 @@
 "use strict";
-const path = require("path");
-const verificationEmail = require("@email/verificationEmail");
-const pwdConfirmEmail = require("@email/pwdConfirmEmail");
+//MODELS
+const User = require("./UserModel");
+const App = require("@models/app");
+//UTIL
+const { promisify } = require("util");
+const { addHours, isAfter } = require("date-fns");
 const {
   resetLoginAttempts,
   createDirectory,
-  generateRandomString,
-  recaptchaVerify
+  recaptchaVerify,
 } = require("@utils/helpers");
-const isEmpty = require("lodash/isEmpty");
-const { promisify } = require("util");
-const { addMinutes, addHours, isAfter } = require("date-fns");
 const Disc = require("@utils/discourse/sso");
-const Boom = require("boom");
-const User = require("./UserModel");
 const crypto = require("crypto");
 const generatePassword = require("generate-password");
+const isEmpty = require("lodash/isEmpty");
+const path = require("path");
+const verificationEmail = require("@email/verificationEmail");
+const pwdConfirmEmail = require("@email/pwdConfirmEmail");
+const Boom = require("boom");
 
 class UserController {
-  constructor() {}
-
+ 
   async check(req, reply) {
     let key = Object.keys(req.body)[0];
     let value = req.body[key].toLowerCase();
@@ -209,6 +210,9 @@ class UserController {
         }
       }
     } else if (loginMethod === "discord") {
+      if (!req.body.external_id) {
+        throw Boom.badRequest("400[E004]: Malformed Request.");
+      }
       const { external_id } = req.body;
       try {
         user = await User.query()
@@ -253,6 +257,7 @@ class UserController {
     try {
       user = await User.query()
         .select(
+          "id",
           "email",
           "first_name",
           "last_name",

@@ -167,6 +167,7 @@ class Discord {
               "user_exists",
               "A user with those credentials already exists. Please link your discord account and try again."
             );
+            throw Boom.badRequest();
           }
         }
       }
@@ -175,7 +176,11 @@ class Discord {
     }
 
     if (type === "login") {
-      reply.io.to(_id).emit("login", response.data.id);
+      if (io.sockets.connected[_id]) {
+        reply.io.to(_id).emit("login", response.data.id);
+      } else {
+        reply.redirect("http://localhost:8080");
+      }
     }
 
     reply.code(200).send();

@@ -6,6 +6,7 @@ module.exports = {
     wait_ready: true,
     instances: "max",
     exec_mode: "cluster",
+    watch: true,
     env: {
       NODE_ENV: 'development'
     },

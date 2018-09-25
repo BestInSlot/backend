@@ -4,16 +4,21 @@
   "description": "The backend for the best in slot site",
   "main": "./app.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "NODE_ENV=test mocha test/*.js",
     "start": "NODE_ENV=development nodemon ./app",
     "dev": "NODE_ENV=development node ./app"
   },
   "_moduleAliases": {
+    "@": ".",
     "@utils": "./utils",
     "@email": "./utils/emailTemplates",
     "@model/base": "./Base",
     "@models/posts": "./api/v1/posts/PostModel.js",
-    "@models/users": "./api/v1/users/UserModel.js"
+    "@models/users": "./api/v1/users/UserModel.js",
+    "@models/streams": "./api/v1/media/MediaModel.js",
+    "@models/app": "./api/v1/recruitment/ApplicationModel.js",
+    "@models/userapp": "./api/v1/recruitment/UserApplicationModel.js"
+    
   },
   "author": "",
   "license": "ISC",
@@ -38,12 +43,15 @@
     "generate-password": "^1.4.0",
     "hide-powered-by": "^1.0.0",
     "knex": "^0.14.6",
+    "knex-migrate": "^1.6.1",
     "mailgun-js": "^0.17.0",
     "module-alias": "^2.1.0",
     "objection": "^1.2.2",
     "objection-db-errors": "^1.0.0",
+    "objection-guid": "^3.0.2",
     "pg": "^7.4.3",
     "pump": "^3.0.0",
+    "qs": "^6.5.2",
     "require-all": "^2.2.0",
     "sanitize-html": "^1.18.4",
     "slug": "^0.9.1",
@@ -51,10 +59,13 @@
     "socket.io-emitter": "^3.1.1",
     "socket.io-redis": "^5.2.0",
     "touch": "^3.1.0",
+    "vue-plugin-load-script": "^1.1.0",
     "x-xss-protection": "^1.1.0"
   },
   "devDependencies": {
+    "chai": "^4.1.2",
     "faker": "^4.1.0",
+    "mocha": "^5.2.0",
     "nodemailer": "^4.6.7"
   }
 }
