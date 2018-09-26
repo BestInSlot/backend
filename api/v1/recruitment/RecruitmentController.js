@@ -320,13 +320,13 @@ class Recruitment {
     let comment;
 
     try {
-      const comment = await transaction(knex, async trx => {
+      comment = await transaction(knex, async trx => {
         const _comment = await Comment.query()
           .insert(req.body)
           .returning("id");
         const join = await knex("application_comments")
           .transacting(trx)
-          .insert({ application_id: id, comment_id: comment.id });
+          .insert({ application_id: id, comment_id: _comment.id });
         return _comment;
       });
     } catch (err) {
