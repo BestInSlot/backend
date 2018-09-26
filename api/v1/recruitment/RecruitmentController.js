@@ -240,6 +240,7 @@ class Recruitment {
           qb.range(0, 19);
         }
         qb.select(
+          "id",
           "approved",
           "pending",
           "approved",
@@ -285,6 +286,56 @@ class Recruitment {
 
     return {
       recruitment
+    };
+  }
+
+  async fetchApplicationComments(req, reply) {
+    if (!req.auth.data.is_admin || !req.auth.data.is_curator) {
+      throw Boom.unauthorized("401: Unauthorized");
+    }
+
+    const query = buildPaginationQuery().call(
+      Comments.query().where("application_id", req.params.id),
+      req
+    );
+
+    let comments;
+    try {
+      comments = await query;
+    } catch (err) {
+      throw Boom.notFound();
+    }
+    return {
+      comments
+    };
+  }
+
+  async createComment(req, reply) {
+    if (!req.auth.data.is_admin || !req.auth.data.is_curator) {
+      throw Boom.unauthorized("401: Unauthorized");
+    }
+
+    const { knex } = this;
+    const { id } = req.params;
+    let comment;
+
+    try {
+      const comment = await transaction(knex, async trx => {
+        const _comment = await Comment.query()
+          .insert(req.body)
+          .returning("id");
+        const join = await knex("application_comments")
+          .transacting(trx)
+          .insert({ application_id: id, comment_id: comment.id });
+        return _comment;
+      });
+    } catch (err) {
+      console.log(err);
+      throw Boom.internal();
+    }
+
+    return {
+      comment
     };
   }
 }

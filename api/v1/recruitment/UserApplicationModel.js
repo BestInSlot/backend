@@ -1,3 +1,4 @@
+"use strict";
 const Model = require("@model/base");
 const guid = require("objection-guid")();
 
@@ -32,6 +33,7 @@ class UserApplication extends guid(Model) {
 
   static get relationMappings() {
     const User = require("@models/users");
+    const Comments = require("@models/comments");
     return {
       applicant: {
         relation: Model.BelongsToOneRelation,
@@ -39,6 +41,19 @@ class UserApplication extends guid(Model) {
         join: {
           from: "user_applications.applicant_id",
           to: "users.id"
+        }
+      },
+
+      comments: {
+        relation: Model.ManyToManyRelation,
+        modelClass: Comments,
+        join: {
+          from: "user_applications.id",
+          through: {
+            from: "application_comments.application_id",
+            to: "application_comments.comments_id"
+          },
+          to: "comments.id"
         }
       }
     };

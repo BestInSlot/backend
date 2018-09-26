@@ -17,7 +17,9 @@
     "@models/users": "./api/v1/users/UserModel.js",
     "@models/streams": "./api/v1/media/MediaModel.js",
     "@models/app": "./api/v1/recruitment/ApplicationModel.js",
-    "@models/userapp": "./api/v1/recruitment/UserApplicationModel.js"
+    "@models/userapp": "./api/v1/recruitment/UserApplicationModel.js",
+    "@models/comments": "./api/v1/recruitment/ApplicationCommentsModel.js"
+
     
   },
   "author": "",

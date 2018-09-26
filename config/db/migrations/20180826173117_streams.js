@@ -43,7 +43,7 @@ exports.up = function(knex, Promise) {
         t.uuid("id").primary();
         t.integer("applicant_id").references("users.id");
         t.jsonb("fields");
-        t.boolean("read").default(false);
+        t.integer("score");
         t.boolean("approved").default(false);
         t.boolean("rejected").default(false);
         t.boolean("pending").default(true);
